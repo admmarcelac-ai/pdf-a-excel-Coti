@@ -10,8 +10,7 @@ import re
 
 st.title("PDF a Excel")
 
-st.markdown("### Subí archivos PDF de facturas")
-st.markdown("Podés cargar una o varias facturas en formato PDF")
+st.markdown("Subí archivos PDF de facturas")
 
 archivos = st.file_uploader(
     "Seleccionar PDFs",
@@ -25,7 +24,7 @@ if not archivos:
     st.info("Esperando que cargues archivos...")
 
 # =========================
-# ✅ FUNCIÓN PRINCIPAL
+# ✅ FUNCIÓN
 # =========================
 
 def procesar_pdf(archivo):
@@ -37,10 +36,6 @@ def procesar_pdf(archivo):
     if not texto:
         return filas
 
-    # =========================
-    # ✅ DATOS GENERALES
-    # =========================
-
     fecha = re.search(r"\d{2}/\d{2}/\d{4}", texto)
     fecha = fecha.group(0) if fecha else ""
 
@@ -51,40 +46,17 @@ def procesar_pdf(archivo):
     cuit_emisor = cuits[0] if len(cuits) > 0 else ""
     cuit_receptor = cuits[1] if len(cuits) > 1 else ""
 
-    # =========================
-    # ✅ RAZÓN EMISOR
-    # =========================
-
     razon_emisor = ""
-
-    match_rs = re.search(
-        r"Razón Social:\s*([A-Z0-9 .]+?)\s*(Condición|Domicilio|CUIT|FACTURA)",
-        texto
-    )
-
-    if match_rs:
-        razon_emisor = match_rs.group(1).strip()
-
-    if not razon_emisor:
-        for linea in texto.split("\n"):
-            if ("SRL" in linea or "S.A" in linea or "SA" in linea):
-                razon_emisor = linea.strip()
-                break
-
-    # =========================
-    # ✅ RECEPTOR
-    # =========================
+    for linea in texto.split("\n"):
+        if ("SRL" in linea or "S.A" in linea or "SA" in linea):
+            razon_emisor = linea.strip()
+            break
 
     razon_receptor = ""
-
     for linea in texto.split("\n"):
         if cuit_receptor in linea:
             razon_receptor = linea.replace(cuit_receptor, "").strip()
             break
-
-    # =========================
-    # ✅ PV + Nº
-    # =========================
 
     m = re.search(
         r"Punto de Venta:\s*Comp\.?\s*Nro:\s*(\d+)\s*(\d+)", texto
@@ -92,10 +64,6 @@ def procesar_pdf(archivo):
 
     punto_venta = m.group(1) if m else ""
     numero = m.group(2) if m else ""
-
-    # =========================
-    # ✅ DETALLE
-    # =========================
 
     if "Código Producto" in texto:
         texto = texto.split("Código Producto", 1)[1]
@@ -106,10 +74,6 @@ def procesar_pdf(archivo):
     for linea in lineas:
 
         if "unidades" in linea:
-
-            # =========================
-            # ✅ CANTIDAD DESDE TEXTO
-            # =========================
 
             cantidad = 0
 
@@ -124,14 +88,8 @@ def procesar_pdf(archivo):
 
                     if len(cantidad_str) <= 3:
                         cantidad = int(cantidad_str)
-                    elif len(cantidad_str) == 4:
-                        cantidad = int(cantidad_str[-3:])
                     else:
                         cantidad = int(cantidad_str[-3:])
-
-            # =========================
-            # ✅ PRODUCTO
-            # =========================
 
             numeros_linea = re.findall(r"\d+,\d+", linea)
 
@@ -139,10 +97,6 @@ def procesar_pdf(archivo):
                 producto = " ".join(buffer_desc).strip()
             else:
                 producto = re.split(r"\d+,\d+", linea)[0].strip()
-
-            # =========================
-            # ✅ IMPORTES
-            # =========================
 
             if len(numeros_linea) >= 4:
                 precio = float(numeros_linea[1].replace(",", "."))
@@ -155,32 +109,20 @@ def procesar_pdf(archivo):
             else:
                 precio = subtotal = total = 0
 
-            # =========================
-            # ✅ CORRECCIÓN CONTABLE
-            # =========================
-
+            # ✅ corrección contable
             if precio > 0:
                 cantidad_calc = round(subtotal / precio)
-
                 if cantidad == 0 or abs(cantidad - cantidad_calc) > 1:
                     cantidad = cantidad_calc
 
-            # =========================
-            # ✅ VALIDACIÓN
-            # =========================
-
+            # ✅ validación
             if precio > 0:
                 diferencia = round((cantidad * precio) - subtotal, 2)
-
-                if abs(diferencia) <= 1:
-                    validacion = "OK"
-                else:
-                    validacion = "ERROR"
+                validacion = "OK" if abs(diferencia) <= 1 else "ERROR"
             else:
                 validacion = "SIN PRECIO"
 
             producto = re.sub(r"\s+", " ", producto).strip()
-
             if len(producto) < 3:
                 producto = "SIN DESCRIPCIÓN"
 
@@ -209,9 +151,8 @@ def procesar_pdf(archivo):
 
     return filas
 
-
 # =========================
-# ✅ PROCESO GLOBAL
+# ✅ PROCESO
 # =========================
 
 if archivos and procesar:
@@ -225,38 +166,7 @@ if archivos and procesar:
 
         df = pd.DataFrame(todas)
 
-        # =========================
-        # ✅ TOTAL POR COMPROBANTE
-        # =========================
-
-        df["Total Factura"] = df.groupby(
-            ["Fecha", "CUIT Emisor", "Tipo", "Punto de Venta", "Número"]
-        )["Total c/ IVA"].transform("first")
-
-        # =========================
-        # ✅ RESUMEN
-        # =========================
-
-        resumen = df.groupby(
-            ["Fecha", "CUIT Emisor", "Razón Emisor",
-             "CUIT Receptor", "Razón Receptor",
-             "Tipo", "Punto de Venta", "Número"],
-            as_index=False
-        ).agg({
-            "Subtotal": "sum",
-            "Total c/ IVA": "max"
-        })
-
-        resumen.rename(columns={
-            "Subtotal": "Subtotal Factura",
-            "Total c/ IVA": "Total Factura"
-        }, inplace=True)
-
-        # =========================
-        # ✅ ORDEN COLUMNAS DETALLE
-        # =========================
-
-        columnas_ordenadas = [
+        columnas = [
             "Fecha",
             "CUIT Emisor",
             "Razón Emisor",
@@ -270,25 +180,12 @@ if archivos and procesar:
             "Precio Unitario",
             "Subtotal",
             "Total c/ IVA",
-            "Total Factura",
             "Validación"
         ]
 
-        df = df[columnas_ordenadas]
+        df = df[columnas]
 
-        # =========================
-        # ✅ MOSTRAR
-        # =========================
-
-        st.subheader("Detalle de productos")
         st.dataframe(df)
-
-        st.subheader("Resumen por comprobante")
-        st.dataframe(resumen)
-
-        # =========================
-        # ✅ EXPORTAR
-        # =========================
 
         buffer = BytesIO()
         df.to_excel(buffer, index=False, engine="openpyxl")
@@ -296,7 +193,7 @@ if archivos and procesar:
         st.download_button(
             "Descargar Excel",
             buffer.getvalue(),
-            "facturas_combinadas.xlsx"
+            "facturas.xlsx"
         )
 
     else:
