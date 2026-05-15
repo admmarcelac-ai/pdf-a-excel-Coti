@@ -4,13 +4,29 @@ import pandas as pd
 from io import BytesIO
 import re
 
-st.title("PDF a Excel - FAC COTI")
+# =========================
+# ✅ INTERFAZ
+# =========================
+
+st.title("PDF a Excel")
+
+st.markdown("### Subí archivos PDF de facturas")
+st.markdown("Podés cargar una o varias facturas en formato PDF")
 
 archivos = st.file_uploader(
-    "Subí PDFs",
+    "Seleccionar PDFs",
     type="pdf",
     accept_multiple_files=True
 )
+
+procesar = st.button("Procesar facturas")
+
+if not archivos:
+    st.info("Esperando que cargues archivos...")
+
+# =========================
+# ✅ FUNCIÓN PRINCIPAL
+# =========================
 
 def procesar_pdf(archivo):
 
@@ -140,7 +156,7 @@ def procesar_pdf(archivo):
                 precio = subtotal = total = 0
 
             # =========================
-            # ✅ 🔥 CORRECCIÓN CONTABLE
+            # ✅ CORRECCIÓN CONTABLE
             # =========================
 
             if precio > 0:
@@ -150,7 +166,7 @@ def procesar_pdf(archivo):
                     cantidad = cantidad_calc
 
             # =========================
-            # ✅ ✅ VALIDACIÓN FINAL
+            # ✅ VALIDACIÓN
             # =========================
 
             if precio > 0:
@@ -198,7 +214,7 @@ def procesar_pdf(archivo):
 # ✅ PROCESO GLOBAL
 # =========================
 
-if archivos:
+if archivos and procesar:
 
     todas = []
 
@@ -206,9 +222,40 @@ if archivos:
         todas.extend(procesar_pdf(pdf))
 
     if todas:
+
         df = pd.DataFrame(todas)
 
-        # ✅ ORDEN FINAL DE COLUMNAS
+        # =========================
+        # ✅ TOTAL POR COMPROBANTE
+        # =========================
+
+        df["Total Factura"] = df.groupby(
+            ["Fecha", "CUIT Emisor", "Tipo", "Punto de Venta", "Número"]
+        )["Total c/ IVA"].transform("first")
+
+        # =========================
+        # ✅ RESUMEN
+        # =========================
+
+        resumen = df.groupby(
+            ["Fecha", "CUIT Emisor", "Razón Emisor",
+             "CUIT Receptor", "Razón Receptor",
+             "Tipo", "Punto de Venta", "Número"],
+            as_index=False
+        ).agg({
+            "Subtotal": "sum",
+            "Total c/ IVA": "max"
+        })
+
+        resumen.rename(columns={
+            "Subtotal": "Subtotal Factura",
+            "Total c/ IVA": "Total Factura"
+        }, inplace=True)
+
+        # =========================
+        # ✅ ORDEN COLUMNAS DETALLE
+        # =========================
+
         columnas_ordenadas = [
             "Fecha",
             "CUIT Emisor",
@@ -223,12 +270,25 @@ if archivos:
             "Precio Unitario",
             "Subtotal",
             "Total c/ IVA",
+            "Total Factura",
             "Validación"
         ]
 
         df = df[columnas_ordenadas]
 
+        # =========================
+        # ✅ MOSTRAR
+        # =========================
+
+        st.subheader("Detalle de productos")
         st.dataframe(df)
+
+        st.subheader("Resumen por comprobante")
+        st.dataframe(resumen)
+
+        # =========================
+        # ✅ EXPORTAR
+        # =========================
 
         buffer = BytesIO()
         df.to_excel(buffer, index=False, engine="openpyxl")
@@ -238,5 +298,6 @@ if archivos:
             buffer.getvalue(),
             "facturas_combinadas.xlsx"
         )
+
     else:
         st.warning("No se detectaron datos.")
